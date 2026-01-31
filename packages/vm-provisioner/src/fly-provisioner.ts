@@ -250,7 +250,7 @@ export class FlyProvisioner {
 
     // 3. Create volume for persistent storage
     const volumeName = "openclaw_data";
-    await this.createVolume(appName, volumeName, 1);
+    await this.createVolume(appName, volumeName, 5);
     this.logger.info(`Volume created: ${volumeName}`, context);
 
     // 4. Create the machine with a fixed token for easy access
@@ -261,6 +261,7 @@ export class FlyProvisioner {
     const openclawConfig = {
       agents: {
         defaults: {
+          workspace: "/data/workspace",
           model: {
             primary: primaryModel,
             fallbacks: ["anthropic/claude-sonnet-4-5", "openai/gpt-4o"],
@@ -325,7 +326,7 @@ export class FlyProvisioner {
             "-c",
             // Create config file if it doesn't exist, then start gateway
             // Config structure matches: https://docs.openclaw.ai/platforms/fly
-            `mkdir -p /data && [ -f /data/openclaw.json ] || printf '%s' '${configJson}' > /data/openclaw.json && exec node dist/index.js gateway --port 3000 --bind lan`,
+            `mkdir -p /data && [ -f /data/openclaw.json ] || printf '%s' '${configJson}' > /data/openclaw.json && exec node dist/index.js gateway --allow-unconfigured --port 3000 --bind lan`,
           ],
         },
       ],

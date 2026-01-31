@@ -122,7 +122,7 @@ Pricing based on [Fly.io pricing](https://fly.io/docs/about/pricing/) (iad regio
 Each moltbot is deployed as its own Fly.io app:
 - App name: `moltbot-<name>`
 - Hostname: `moltbot-<name>.fly.dev`
-- 1GB persistent volume at `/data`
+- 5GB persistent volume at `/data`
 - Auto-restart on failure
 
 This per-app architecture ensures:

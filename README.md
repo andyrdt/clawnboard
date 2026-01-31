@@ -186,7 +186,7 @@ All sizes use 2 shared CPUs (sufficient since LLM computation happens on Anthrop
 | 2GB (Recommended) | 2GB | ~$11/mo |
 | 4GB  | 4GB | ~$21/mo |
 
-Stopped moltbots cost ~$0.15/GB/month (storage only).
+Stopped moltbots cost ~$0.75/month for 5GB storage.
 
 > **Note:** OpenClaw recommends 2GB RAM minimum for optimal performance.
 
@@ -274,7 +274,7 @@ For advanced configuration, SSH into the machine: `fly ssh console -a moltbot-<n
 2. When you create a moltbot, ClawnBoard calls the **Fly.io API** to:
    - Create a new app: `moltbot-<name>`
    - Allocate a shared IPv4 address
-   - Create a 1GB persistent volume
+   - Create a 5GB persistent volume
    - Launch a machine running OpenClaw
 3. Each moltbot gets a public URL: `https://moltbot-<name>.fly.dev`
 4. Your AI API keys are passed as environment variables to the moltbot
@@ -292,11 +292,11 @@ ClawnBoard follows the [official OpenClaw Fly.io deployment pattern](https://doc
 
 | Setting | Value | Purpose |
 |---------|-------|---------|
+| `agents.defaults.workspace` | `/data/workspace` | Persistent workspace for agent files |
+| `agents.defaults.model.primary` | Your selected model | Default AI model |
 | `agents.list[0]` | `{ id: "main", default: true }` | Default agent for conversations |
-| `agents.defaults.model.primary` | `anthropic/claude-opus-4-5` | Default AI model |
 | `gateway.mode` | `local` | Standard local gateway mode |
 | `gateway.trustedProxies` | Fly.io internal ranges | Trust reverse proxy connections |
-| `gateway.controlUi.allowInsecureAuth` | `true` | Allow token-only authentication |
 
 Environment variables passed to each moltbot:
 
@@ -307,6 +307,42 @@ Environment variables passed to each moltbot:
 | `OPENAI_API_KEY` | From your .env | AI model authentication (if set) |
 
 The dashboard URL always includes `?token=clawnboard` automatically.
+
+---
+
+## Setting Up Your Moltbot
+
+After creating a moltbot, click **Open Dashboard** to access the OpenClaw Control UI.
+
+### First Conversation (Hatching)
+
+On your first message, the agent will "wake up" and initiate a conversation to learn who it is:
+
+> "Hey. I just woke up. Who am I? Who are you?"
+
+This is the **hatching process** — your agent is figuring out its identity. Through conversation, you'll define:
+
+- **Its name** — What should you call it?
+- **Its personality** — Formal? Casual? Snarky? Warm?
+- **Who you are** — Your name, preferences, timezone
+
+The agent saves this to its workspace files (`IDENTITY.md`, `SOUL.md`, `USER.md`) which persist across conversations.
+
+### Configuring Channels (Discord, Telegram, etc.)
+
+Want your moltbot on Discord or Telegram? **Ask your agent for help!**
+
+> "Hey, I'd like to connect you to my Discord server. Can you help me set that up?"
+
+Your agent can guide you through:
+- Creating a Discord bot and getting the token
+- Configuring Telegram via BotFather
+- Setting up channel allowlists and permissions
+- Editing the `openclaw.json` config file
+
+You can also configure channels directly in the Control UI under the **Config** tab.
+
+For detailed channel setup, see the [OpenClaw documentation](https://docs.openclaw.ai).
 
 ---
 
@@ -330,7 +366,7 @@ Open http://localhost:3000 — your moltbots are fetched from Fly.io.
 | Item | Cost |
 |------|------|
 | ClawnBoard | Free (runs locally) |
-| Fly.io (per moltbot) | ~$6-21/mo running, ~$0.15/mo stopped |
+| Fly.io (per moltbot) | ~$6-21/mo running, ~$0.75/mo stopped |
 | Anthropic API | ~$3/million input tokens, $15/million output |
 | OpenAI API | Varies by model |
 
