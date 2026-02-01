@@ -70,6 +70,7 @@ moltbotsRouter.get("/", async (c) => {
       region: instance.region,
       size: "2gb" as MoltbotSize, // Fly.io doesn't return size, default to 2GB
       createdAt: instance.createdAt,
+      gatewayToken: instance.gatewayToken,
     }));
 
     return c.json({
@@ -119,6 +120,7 @@ moltbotsRouter.get("/:id", async (c) => {
       region: instance.region,
       size: "2gb" as MoltbotSize,
       createdAt: instance.createdAt,
+      gatewayToken: instance.gatewayToken,
     };
 
     return c.json({
@@ -178,6 +180,7 @@ moltbotsRouter.post("/", async (c) => {
       region: instance.region,
       size: data.size as MoltbotSize,
       createdAt: instance.createdAt,
+      gatewayToken: instance.gatewayToken,
     };
 
     return c.json(

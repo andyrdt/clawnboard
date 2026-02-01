@@ -275,9 +275,11 @@ For advanced configuration, SSH into the machine: `fly ssh console -a moltbot-<n
    - Create a new app: `moltbot-<name>`
    - Allocate a shared IPv4 address
    - Create a 5GB persistent volume
+   - Generate a unique gateway token for secure access
    - Launch a machine running OpenClaw
 3. Each moltbot gets a public URL: `https://moltbot-<name>.fly.dev`
 4. Your AI API keys are passed as environment variables to the moltbot
+5. The gateway token is stored in Fly.io machine metadata for secure retrieval
 
 ### Why Per-App Architecture?
 
@@ -285,6 +287,38 @@ Each moltbot is its own Fly.io app (not just a machine in a shared app) because:
 - **DNS**: Each app gets automatic `*.fly.dev` DNS
 - **Isolation**: Moltbots can't interfere with each other
 - **Management**: Easy to start/stop/delete individually
+
+### Security
+
+Each moltbot is protected by a **unique, randomly-generated gateway token**:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  PUBLIC (anyone can reach)                                  │
+│  https://moltbot-foo.fly.dev                                │
+│  └─ But OpenClaw requires ?token=xxx to authenticate        │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  PRIVATE (requires your Fly.io org token)                   │
+│  Fly.io Machine Metadata API                                │
+│  └─ Only you can retrieve the gateway token                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**How it works:**
+1. When you create a moltbot, ClawnBoard generates a random UUID token
+2. The token is stored in Fly.io machine metadata (requires API authentication to read)
+3. The token is passed to OpenClaw as `OPENCLAW_GATEWAY_TOKEN`
+4. When you click "Open Dashboard", ClawnBoard fetches the token from metadata and includes it in the URL
+
+**This means:**
+- Random visitors can't access your moltbot — they don't know the token
+- Only someone with your Fly.io org token can retrieve the gateway token
+- You never need to manage tokens manually — ClawnBoard handles it transparently
+- Tokens are cleaned up automatically when you delete a moltbot
+
+**SSH access** uses Fly.io's built-in authentication (your org token), not the gateway token.
 
 ### Moltbot Configuration
 
@@ -302,11 +336,11 @@ Environment variables passed to each moltbot:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
-| `OPENCLAW_GATEWAY_TOKEN` | `clawnboard` | Fixed token for dashboard access |
+| `OPENCLAW_GATEWAY_TOKEN` | Unique per moltbot | Secure dashboard access |
 | `ANTHROPIC_API_KEY` | From your .env | AI model authentication |
 | `OPENAI_API_KEY` | From your .env | AI model authentication (if set) |
 
-The dashboard URL always includes `?token=clawnboard` automatically.
+The dashboard URL automatically includes the gateway token for authentication.
 
 ---
 

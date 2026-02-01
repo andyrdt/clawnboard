@@ -100,6 +100,7 @@ interface MoltbotInstance {
   createdAt: string;
   hostname: string;    // e.g., "moltbot-assistant.fly.dev"
   privateIp: string | null;
+  gatewayToken?: string; // Token for OpenClaw dashboard access
 }
 ```
 
@@ -129,6 +130,28 @@ This per-app architecture ensures:
 - Automatic DNS for each moltbot
 - Complete isolation between moltbots
 - Easy individual management
+
+## Security
+
+Each moltbot is protected by a **unique gateway token**:
+
+1. On creation, a random UUID is generated
+2. The token is stored in Fly.io machine metadata (requires API auth to read)
+3. The token is passed to OpenClaw as `OPENCLAW_GATEWAY_TOKEN`
+4. Access the dashboard via `https://moltbot-<name>.fly.dev?token=<token>`
+
+The `gatewayToken` field is included in `MoltbotInstance` when you call `createMoltbot()`, `getMoltbot()`, or `listMoltbots()`.
+
+```typescript
+const moltbot = await provisioner.createMoltbot({ name: "assistant" });
+const dashboardUrl = `https://${moltbot.hostname}?token=${moltbot.gatewayToken}`;
+```
+
+**Security guarantees:**
+- Tokens are randomly generated (UUID v4)
+- Stored in Fly.io metadata (requires org token to access)
+- Cleaned up automatically when moltbot is deleted
+- SSH access uses Fly.io's auth, not the gateway token
 
 ## OpenClaw Configuration
 

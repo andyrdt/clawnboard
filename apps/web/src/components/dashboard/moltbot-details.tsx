@@ -174,7 +174,9 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
   const isStartingUp = moltbot.status === "created" || moltbot.status === "starting";
   const isBooting = isRunning && serverReady === false;
   const isReady = isRunning && serverReady === true;
-  const controlUrl = `https://${moltbot.hostname}?token=clawnboard`;
+  const controlUrl = moltbot.gatewayToken
+    ? `https://${moltbot.hostname}?token=${encodeURIComponent(moltbot.gatewayToken)}`
+    : `https://${moltbot.hostname}`;
   const sshCommand = `fly ssh console -a moltbot-${moltbot.name}`;
 
   const getDisplayStatus = () => {

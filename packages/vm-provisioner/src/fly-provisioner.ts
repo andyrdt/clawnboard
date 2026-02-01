@@ -3,8 +3,14 @@
  *
  * Each moltbot gets its own Fly.io app with a dedicated URL.
  * This ensures proper DNS and avoids the shared-app DNS issues.
+ *
+ * Security: Each moltbot gets a unique, randomly-generated gateway token
+ * stored in Fly.io machine metadata. This prevents unauthorized access
+ * to the OpenClaw dashboard - only users with access to the Fly.io API
+ * (via their org token) can retrieve the gateway token.
  */
 
+import crypto from "node:crypto";
 import type {
   ProvisionerConfig,
   MoltbotConfig,
@@ -30,6 +36,9 @@ const SIZE_SPECS = {
 
 // Prefix for moltbot app names to identify them
 const MOLTBOT_APP_PREFIX = "moltbot-";
+
+// Metadata key for storing gateway token
+const GATEWAY_TOKEN_METADATA_KEY = "gateway_token";
 
 /**
  * Fly.io provisioner for OpenClaw moltbots.
@@ -208,6 +217,25 @@ export class FlyProvisioner {
   }
 
   /**
+   * Sets a metadata value on a machine.
+   */
+  private async setMachineMetadata(appName: string, machineId: string, key: string, value: string): Promise<void> {
+    await this.machinesRequest<void>(appName, "POST", `/machines/${machineId}/metadata/${key}`, { value });
+  }
+
+  /**
+   * Gets all metadata for a machine.
+   * Returns empty object if metadata fetch fails (e.g., for older moltbots without tokens).
+   */
+  private async getMachineMetadata(appName: string, machineId: string): Promise<Record<string, string>> {
+    try {
+      return await this.machinesRequest<Record<string, string>>(appName, "GET", `/machines/${machineId}/metadata`);
+    } catch {
+      return {};
+    }
+  }
+
+  /**
    * Lists all moltbot apps.
    */
   private async listMoltbotApps(): Promise<Array<{ name: string; status: string }>> {
@@ -253,8 +281,9 @@ export class FlyProvisioner {
     await this.createVolume(appName, volumeName, 5);
     this.logger.info(`Volume created: ${volumeName}`, context);
 
-    // 4. Create the machine with a fixed token for easy access
-    // Using a simple known token so URLs are predictable
+    // 4. Create the machine with a unique gateway token
+    // Token is stored in Fly.io metadata for secure retrieval later
+    const gatewayToken = crypto.randomUUID();
     const primaryModel = config.model || "anthropic/claude-sonnet-4-5";
 
     // Build OpenClaw config with selected model
@@ -295,8 +324,9 @@ export class FlyProvisioner {
         OPENCLAW_STATE_DIR: "/data",
         OPENCLAW_PREFER_PNPM: "1",
         NODE_OPTIONS: "--max-old-space-size=1536",
-        // Gateway authentication - fixed token for dashboard access
-        OPENCLAW_GATEWAY_TOKEN: "clawnboard",
+        // Gateway authentication - unique token per moltbot
+        // Token is also stored in Fly.io metadata for secure retrieval
+        OPENCLAW_GATEWAY_TOKEN: gatewayToken,
         ...config.env,
       },
       guest: SIZE_SPECS[config.size || "2gb"],
@@ -353,7 +383,14 @@ export class FlyProvisioner {
         region: machine.region,
       });
 
-      return this.mapMachineToInstance(machine, appName);
+      // Store the gateway token in machine metadata for later retrieval
+      // This ensures the token persists and can be fetched when user returns
+      await this.setMachineMetadata(appName, machine.id, GATEWAY_TOKEN_METADATA_KEY, gatewayToken);
+      this.logger.info(`Gateway token stored in metadata`, { ...context, machineId: machine.id });
+
+      const instance = this.mapMachineToInstance(machine, appName);
+      instance.gatewayToken = gatewayToken;
+      return instance;
     } catch (error) {
       // Clean up the app if machine creation fails
       this.logger.error(`Failed to create machine, cleaning up app: ${appName}`,
@@ -369,6 +406,7 @@ export class FlyProvisioner {
 
   /**
    * Gets a moltbot by its name.
+   * Includes the gateway token fetched from machine metadata.
    */
   async getMoltbot(moltbotName: string): Promise<MoltbotInstance | null> {
     const appName = moltbotName.startsWith(MOLTBOT_APP_PREFIX)
@@ -380,7 +418,14 @@ export class FlyProvisioner {
       if (machines.length === 0) {
         return null;
       }
-      return this.mapMachineToInstance(machines[0], appName);
+      const machine = machines[0];
+      const instance = this.mapMachineToInstance(machine, appName);
+
+      // Fetch gateway token from metadata
+      const metadata = await this.getMachineMetadata(appName, machine.id);
+      instance.gatewayToken = metadata[GATEWAY_TOKEN_METADATA_KEY];
+
+      return instance;
     } catch (error) {
       if (error instanceof Error && (error.message.includes("404") || error.message.includes("not found"))) {
         return null;
@@ -391,6 +436,7 @@ export class FlyProvisioner {
 
   /**
    * Lists all moltbots.
+   * Includes gateway tokens fetched from machine metadata.
    */
   async listMoltbots(): Promise<MoltbotInstance[]> {
     const apps = await this.listMoltbotApps();
@@ -400,7 +446,14 @@ export class FlyProvisioner {
       try {
         const machines = await this.machinesRequest<FlyMachine[]>(app.name, "GET", "/machines");
         if (machines.length > 0) {
-          moltbots.push(this.mapMachineToInstance(machines[0], app.name));
+          const machine = machines[0];
+          const instance = this.mapMachineToInstance(machine, app.name);
+
+          // Fetch gateway token from metadata
+          const metadata = await this.getMachineMetadata(app.name, machine.id);
+          instance.gatewayToken = metadata[GATEWAY_TOKEN_METADATA_KEY];
+
+          moltbots.push(instance);
         }
       } catch {
         // Skip apps we can't access
