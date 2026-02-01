@@ -125,11 +125,28 @@ Each moltbot is deployed as its own Fly.io app:
 - Hostname: `moltbot-<name>.fly.dev`
 - 5GB persistent volume at `/data`
 - Auto-restart on failure
+- 5-minute health check grace period (OpenClaw takes 1-3 min to start)
+- Root user access (agent can install packages via `sudo`)
 
 This per-app architecture ensures:
 - Automatic DNS for each moltbot
 - Complete isolation between moltbots
 - Easy individual management
+
+### Root Access
+
+Moltbots run with root privileges so the agent can install system packages when needed (e.g., browser dependencies for Playwright). This enables the agent to be self-sufficient and install tools on demand.
+
+**Note:** For existing moltbots created before this feature, you can enable root access by running:
+```bash
+fly machine update <machine-id> -a moltbot-<name> --machine-config '{"init":{"user":"root"}}' --yes
+```
+Then SSH in and configure sudo:
+```bash
+fly ssh console -a moltbot-<name> -C 'apt-get update'
+fly ssh console -a moltbot-<name> -C 'apt-get install -y sudo'
+fly ssh console -a moltbot-<name> -C 'sh -c "echo \"node ALL=(ALL) NOPASSWD: ALL\" >> /etc/sudoers"'
+```
 
 ## Security
 

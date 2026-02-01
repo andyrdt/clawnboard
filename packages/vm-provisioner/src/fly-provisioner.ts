@@ -330,6 +330,10 @@ export class FlyProvisioner {
         ...config.env,
       },
       guest: SIZE_SPECS[config.size || "2gb"],
+      // Run as root so the agent can install packages (e.g., browser deps)
+      init: {
+        user: "root",
+      },
       restart: {
         policy: "always",
       },

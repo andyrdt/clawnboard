@@ -92,6 +92,9 @@ export interface FlyMachineConfig {
     policy: "always" | "never" | "on-failure";
   };
   checks?: Record<string, FlyCheck>;
+  init?: {
+    user?: string;
+  };
 }
 
 export interface FlyCheck {
