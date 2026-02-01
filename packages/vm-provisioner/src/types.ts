@@ -91,6 +91,16 @@ export interface FlyMachineConfig {
   restart?: {
     policy: "always" | "never" | "on-failure";
   };
+  checks?: Record<string, FlyCheck>;
+}
+
+export interface FlyCheck {
+  type: "http" | "tcp";
+  port: number;
+  path?: string;
+  interval: string;
+  timeout: string;
+  grace_period?: string;
 }
 
 export interface FlyService {

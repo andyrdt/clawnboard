@@ -343,6 +343,17 @@ export class FlyProvisioner {
           internal_port: 3000,
         },
       ],
+      // Health check with grace period - OpenClaw can take several minutes to start
+      checks: {
+        httpget: {
+          type: "http",
+          port: 3000,
+          path: "/",
+          interval: "15s",
+          timeout: "10s",
+          grace_period: "300s",
+        },
+      },
       mounts: [
         {
           volume: volumeName,
