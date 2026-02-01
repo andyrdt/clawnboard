@@ -15,7 +15,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { FlyProvisioner } from "@clawnboard/vm-provisioner";
-import type { Moltbot, MoltbotSize } from "@clawnboard/shared";
+import type { Moltbot, MoltbotSize, VolumeSnapshot } from "@clawnboard/shared";
 
 export const moltbotsRouter = new Hono();
 
@@ -49,6 +49,9 @@ function getAIProviderEnv(): Record<string, string> {
   }
   if (process.env.OPENAI_API_KEY) {
     env.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+  }
+  if (process.env.OPENROUTER_API_KEY) {
+    env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
   }
   return env;
 }
@@ -345,6 +348,236 @@ moltbotsRouter.post("/:id/update", async (c) => {
         error: {
           code: "FLY_API_ERROR",
           message: error instanceof Error ? error.message : "Failed to update moltbot",
+        },
+      },
+      500
+    );
+  }
+});
+
+/**
+ * List snapshots for a moltbot
+ * GET /api/moltbots/:id/snapshots
+ */
+moltbotsRouter.get("/:id/snapshots", async (c) => {
+  const id = c.req.param("id");
+
+  try {
+    const provisioner = getProvisioner();
+    const volumes = await provisioner.listVolumes(id);
+
+    if (volumes.length === 0) {
+      return c.json({
+        success: true,
+        data: [],
+      });
+    }
+
+    // Get snapshots for the first volume (moltbots have one volume)
+    const volume = volumes[0];
+    const rawSnapshots = await provisioner.listVolumeSnapshots(id, volume.id);
+
+    const snapshots: VolumeSnapshot[] = rawSnapshots.map((snapshot) => {
+      const date = new Date(snapshot.created_at).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      return {
+        id: snapshot.id,
+        moltbotName: id,
+        volumeId: volume.id,
+        createdAt: snapshot.created_at,
+        sizeGb: Math.ceil(snapshot.size / (1024 * 1024 * 1024)),
+        label: `${id} - ${date}`,
+      };
+    });
+
+    return c.json({
+      success: true,
+      data: snapshots,
+    });
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "FLY_API_ERROR",
+          message: error instanceof Error ? error.message : "Failed to list snapshots",
+        },
+      },
+      500
+    );
+  }
+});
+
+/**
+ * Create a snapshot for a moltbot
+ * POST /api/moltbots/:id/snapshots
+ */
+moltbotsRouter.post("/:id/snapshots", async (c) => {
+  const id = c.req.param("id");
+
+  try {
+    const provisioner = getProvisioner();
+    const volumes = await provisioner.listVolumes(id);
+
+    if (volumes.length === 0) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "NO_VOLUME",
+            message: "Moltbot has no volume to snapshot",
+          },
+        },
+        400
+      );
+    }
+
+    const volume = volumes[0];
+    const snapshot = await provisioner.createVolumeSnapshot(id, volume.id);
+
+    const date = new Date(snapshot.created_at).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const volumeSnapshot: VolumeSnapshot = {
+      id: snapshot.id,
+      moltbotName: id,
+      volumeId: volume.id,
+      createdAt: snapshot.created_at,
+      sizeGb: Math.ceil(snapshot.size / (1024 * 1024 * 1024)),
+      label: `${id} - ${date}`,
+    };
+
+    return c.json(
+      {
+        success: true,
+        data: volumeSnapshot,
+      },
+      201
+    );
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "FLY_API_ERROR",
+          message: error instanceof Error ? error.message : "Failed to create snapshot",
+        },
+      },
+      500
+    );
+  }
+});
+
+// Snapshot routes (not nested under moltbots)
+export const snapshotsRouter = new Hono();
+
+/**
+ * List ALL snapshots across all moltbots
+ * GET /api/snapshots
+ */
+snapshotsRouter.get("/", async (c) => {
+  try {
+    const provisioner = getProvisioner();
+    const snapshots = await provisioner.listAllSnapshots();
+
+    return c.json({
+      success: true,
+      data: snapshots,
+    });
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "FLY_API_ERROR",
+          message: error instanceof Error ? error.message : "Failed to list snapshots",
+        },
+      },
+      500
+    );
+  }
+});
+
+const deployFromSnapshotSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(50)
+    .regex(/^[a-z0-9-]+$/, "Name must contain only lowercase letters, numbers, and hyphens"),
+  size: z.enum(["1gb", "2gb", "4gb"]).default("2gb"),
+  model: z.string().optional().default("anthropic/claude-sonnet-4-5"),
+  sourceApp: z.string(),  // The app name where the snapshot exists
+});
+
+/**
+ * Deploy a new moltbot from a snapshot
+ * POST /api/snapshots/:id/deploy
+ */
+snapshotsRouter.post("/:id/deploy", async (c) => {
+  const snapshotId = c.req.param("id");
+  const body = await c.req.json();
+  const data = deployFromSnapshotSchema.parse(body);
+
+  try {
+    const aiEnv = getAIProviderEnv();
+    if (Object.keys(aiEnv).length === 0) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "MISSING_API_KEY",
+            message: "At least one AI provider API key must be set",
+          },
+        },
+        400
+      );
+    }
+
+    const provisioner = getProvisioner();
+    const instance = await provisioner.deployFromSnapshot({
+      snapshotId,
+      sourceAppName: data.sourceApp,
+      newName: data.name,
+      size: data.size,
+      model: data.model,
+      env: aiEnv,
+    });
+
+    const moltbot: Moltbot = {
+      id: instance.id,
+      name: instance.name,
+      status: instance.status,
+      hostname: instance.hostname,
+      region: instance.region,
+      size: data.size as MoltbotSize,
+      createdAt: instance.createdAt,
+      gatewayToken: instance.gatewayToken,
+    };
+
+    return c.json(
+      {
+        success: true,
+        data: moltbot,
+      },
+      201
+    );
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "FLY_API_ERROR",
+          message: error instanceof Error ? error.message : "Failed to deploy from snapshot",
         },
       },
       500

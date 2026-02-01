@@ -20,6 +20,7 @@ export default function SettingsPage() {
   const [providers, setProviders] = useState<{
     anthropic: boolean;
     openai: boolean;
+    openrouter: boolean;
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -36,7 +37,7 @@ export default function SettingsPage() {
         setProviders(providersData.providers);
       } catch {
         setStatus({ ready: false, checks: { flyio: false } });
-        setProviders({ anthropic: false, openai: false });
+        setProviders({ anthropic: false, openai: false, openrouter: false });
       } finally {
         setLoading(false);
       }
@@ -134,6 +135,17 @@ export default function SettingsPage() {
                   </span>
                   <span className="text-muted-foreground mx-2 flex-1 border-b border-dotted border-muted-foreground/30" />
                   {providers?.openai ? (
+                    <span className="text-green-600">configured</span>
+                  ) : (
+                    <span className="text-muted-foreground">not set</span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className={providers?.openrouter ? "" : "text-muted-foreground"}>
+                    OPENROUTER_API_KEY
+                  </span>
+                  <span className="text-muted-foreground mx-2 flex-1 border-b border-dotted border-muted-foreground/30" />
+                  {providers?.openrouter ? (
                     <span className="text-green-600">configured</span>
                   ) : (
                     <span className="text-muted-foreground">not set</span>

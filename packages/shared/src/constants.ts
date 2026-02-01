@@ -7,29 +7,33 @@ export const GATEWAY_TOKEN = "clawnboard";
 // OpenClaw recommends 2GB RAM minimum
 // See: https://docs.openclaw.ai/platforms/fly
 // Pricing based on: https://fly.io/docs/about/pricing/ (iad region)
+// Prices include 20GB persistent volume storage ($3/mo)
 export const VM_SPECS = {
   "1gb": {
     cpus: 2,
     memoryMb: 1024,
     label: "1GB RAM",
-    description: "2 CPU, 1GB RAM",
-    pricePerMonth: "~$6/mo",
+    description: "2 CPU, 1GB RAM, 20GB storage",
+    pricePerMonth: "~$9/mo",
   },
   "2gb": {
     cpus: 2,
     memoryMb: 2048,
-    label: "2GB RAM (Recommended)",
-    description: "2 CPU, 2GB RAM",
-    pricePerMonth: "~$11/mo",
+    label: "2GB RAM",
+    description: "2 CPU, 2GB RAM, 20GB storage",
+    pricePerMonth: "~$14/mo",
   },
   "4gb": {
     cpus: 2,
     memoryMb: 4096,
     label: "4GB RAM",
-    description: "2 CPU, 4GB RAM",
-    pricePerMonth: "~$21/mo",
+    description: "2 CPU, 4GB RAM, 20GB storage",
+    pricePerMonth: "~$23/mo",
   },
 } as const;
+
+// Default persistent volume size in GB
+export const DEFAULT_VOLUME_SIZE_GB = 20;
 
 // Available AI models for moltbots
 // Model IDs follow OpenClaw's provider/model format
@@ -41,7 +45,7 @@ export const AI_MODELS = {
   },
   "anthropic/claude-sonnet-4-5": {
     provider: "anthropic",
-    label: "Claude 4.5 Sonnet (Recommended)",
+    label: "Claude 4.5 Sonnet",
   },
   "anthropic/claude-opus-4-5": {
     provider: "anthropic",
@@ -55,6 +59,11 @@ export const AI_MODELS = {
   "openai/gpt-4o": {
     provider: "openai",
     label: "GPT-4o",
+  },
+  // OpenRouter models
+  "openrouter/moonshotai/kimi-k2.5": {
+    provider: "openrouter",
+    label: "Kimi K2.5 (via OpenRouter)",
   },
 } as const;
 

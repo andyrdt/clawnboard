@@ -15,6 +15,7 @@ import {
   AlertCircle,
   Loader2,
   Bot,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,8 +37,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import type { Moltbot, MoltbotStatus } from "@clawnboard/shared";
+import type { Moltbot, MoltbotStatus, VolumeSnapshot } from "@clawnboard/shared";
 import { VM_SPECS } from "@clawnboard/shared";
+import { SnapshotList } from "./snapshot-list";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -64,6 +66,9 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [serverReady, setServerReady] = useState<boolean | null>(null);
+  const [snapshots, setSnapshots] = useState<VolumeSnapshot[]>([]);
+  const [loadingSnapshots, setLoadingSnapshots] = useState(true);
+  const [creatingSnapshot, setCreatingSnapshot] = useState(false);
 
   const checkServerHealth = async (hostname: string) => {
     try {
@@ -107,6 +112,24 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
     return () => clearInterval(interval);
   }, [moltbotId]);
 
+  // Fetch snapshots
+  useEffect(() => {
+    const fetchSnapshots = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/moltbots/${moltbotId}/snapshots`);
+        const data = await res.json();
+        if (data.success) {
+          setSnapshots(data.data);
+        }
+      } catch {
+        // Silently fail - snapshots are not critical
+      } finally {
+        setLoadingSnapshots(false);
+      }
+    };
+    fetchSnapshots();
+  }, [moltbotId]);
+
   const handleAction = async (action: "start" | "stop" | "restart" | "destroy" | "update") => {
     setActionLoading(action);
     try {
@@ -138,6 +161,23 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCreateSnapshot = async () => {
+    setCreatingSnapshot(true);
+    try {
+      const res = await fetch(`${API_URL}/api/moltbots/${moltbotId}/snapshots`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSnapshots((prev) => [data.data, ...prev]);
+      }
+    } catch (err) {
+      console.error("Failed to create snapshot:", err);
+    } finally {
+      setCreatingSnapshot(false);
+    }
   };
 
   if (loading) {
@@ -310,6 +350,42 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Snapshots */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Camera className="h-4 w-4" />
+              Snapshots
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCreateSnapshot}
+              disabled={creatingSnapshot || !isRunning}
+            >
+              {creatingSnapshot ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Camera className="mr-2 h-4 w-4" />
+                  Save Snapshot
+                </>
+              )}
+            </Button>
+          </div>
+          <CardDescription>
+            Save the current state for backup or cloning
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SnapshotList snapshots={snapshots} loading={loadingSnapshots} />
+        </CardContent>
+      </Card>
 
       {/* SSH Access - Terminal Style */}
       <div className="bg-zinc-950 rounded-lg px-4 py-3">

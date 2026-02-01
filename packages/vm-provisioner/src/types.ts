@@ -132,3 +132,29 @@ export interface FlyMachineCreateRequest {
   config: FlyMachineConfig;
   skip_launch?: boolean;
 }
+
+// Fly.io Volume types
+export interface FlyVolume {
+  id: string;
+  name: string;
+  state: string;
+  size_gb: number;
+  region: string;
+  created_at: string;
+  snapshot_retention?: number;
+}
+
+export interface FlyVolumeSnapshot {
+  id: string;
+  size: number;  // Size in bytes
+  digest: string;
+  created_at: string;
+  status: string;
+}
+
+export interface FlyVolumeCreateRequest {
+  name: string;
+  size_gb: number;
+  region: string;
+  snapshot_id?: string;  // For creating from snapshot
+}

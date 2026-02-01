@@ -27,3 +27,12 @@ export interface CreateMoltbotInput {
   name: string;
   size?: MoltbotSize;
 }
+
+export interface VolumeSnapshot {
+  id: string;
+  moltbotName: string;  // Source moltbot
+  volumeId: string;
+  createdAt: string;
+  sizeGb: number;
+  label: string;  // "{moltbotName} - {date}"
+}

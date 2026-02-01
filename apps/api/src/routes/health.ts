@@ -54,6 +54,7 @@ healthRouter.get("/providers", (c) => {
     providers: {
       anthropic: isRealKey(process.env.ANTHROPIC_API_KEY),
       openai: isRealKey(process.env.OPENAI_API_KEY),
+      openrouter: isRealKey(process.env.OPENROUTER_API_KEY),
     },
   });
 });
