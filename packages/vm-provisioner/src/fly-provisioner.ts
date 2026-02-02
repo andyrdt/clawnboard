@@ -42,6 +42,9 @@ const MOLTBOT_APP_PREFIX = "moltbot-";
 // Metadata key for storing gateway token
 const GATEWAY_TOKEN_METADATA_KEY = "gateway_token";
 
+// Metadata key for storing hidden snapshot IDs (comma-separated)
+const HIDDEN_SNAPSHOTS_METADATA_KEY = "hidden_snapshots";
+
 /**
  * Fly.io provisioner for OpenClaw moltbots.
  *
@@ -723,6 +726,55 @@ export class FlyProvisioner {
     return allSnapshots.sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
+  }
+
+  /**
+   * Gets the list of hidden snapshot IDs for a moltbot.
+   */
+  async getHiddenSnapshots(moltbotName: string): Promise<string[]> {
+    const appName = moltbotName.startsWith(MOLTBOT_APP_PREFIX)
+      ? moltbotName
+      : `${MOLTBOT_APP_PREFIX}${moltbotName}`;
+
+    try {
+      const machines = await this.machinesRequest<FlyMachine[]>(appName, "GET", "/machines");
+      if (machines.length === 0) {
+        return [];
+      }
+
+      const metadata = await this.getMachineMetadata(appName, machines[0].id);
+      const hiddenStr = metadata[HIDDEN_SNAPSHOTS_METADATA_KEY];
+      return hiddenStr ? hiddenStr.split(",").filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Hides a snapshot by adding its ID to the hidden list in machine metadata.
+   */
+  async hideSnapshot(moltbotName: string, snapshotId: string): Promise<void> {
+    const appName = moltbotName.startsWith(MOLTBOT_APP_PREFIX)
+      ? moltbotName
+      : `${MOLTBOT_APP_PREFIX}${moltbotName}`;
+    const context = { moltbotName, appName, snapshotId, operation: "hide-snapshot" };
+
+    this.logger.info(`Hiding snapshot: ${snapshotId}`, context);
+
+    const machines = await this.machinesRequest<FlyMachine[]>(appName, "GET", "/machines");
+    if (machines.length === 0) {
+      throw new Error(`No machine found for moltbot: ${moltbotName}`);
+    }
+
+    const machineId = machines[0].id;
+    const currentHidden = await this.getHiddenSnapshots(moltbotName);
+
+    if (!currentHidden.includes(snapshotId)) {
+      const newHidden = [...currentHidden, snapshotId].join(",");
+      await this.setMachineMetadata(appName, machineId, HIDDEN_SNAPSHOTS_METADATA_KEY, newHidden);
+    }
+
+    this.logger.info(`Snapshot hidden: ${snapshotId}`, context);
   }
 
   /**

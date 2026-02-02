@@ -375,25 +375,31 @@ moltbotsRouter.get("/:id/snapshots", async (c) => {
 
     // Get snapshots for the first volume (moltbots have one volume)
     const volume = volumes[0];
-    const rawSnapshots = await provisioner.listVolumeSnapshots(id, volume.id);
+    const [rawSnapshots, hiddenIds] = await Promise.all([
+      provisioner.listVolumeSnapshots(id, volume.id),
+      provisioner.getHiddenSnapshots(id),
+    ]);
 
-    const snapshots: VolumeSnapshot[] = rawSnapshots.map((snapshot) => {
-      const date = new Date(snapshot.created_at).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      return {
-        id: snapshot.id,
-        moltbotName: id,
-        volumeId: volume.id,
-        createdAt: snapshot.created_at,
-        sizeGb: Math.ceil(snapshot.size / (1024 * 1024 * 1024)),
-        label: `${id} - ${date}`,
-      };
-    });
+    const snapshots: VolumeSnapshot[] = rawSnapshots
+      .filter((snapshot) => !hiddenIds.includes(snapshot.id))
+      .map((snapshot) => {
+        const date = new Date(snapshot.created_at).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return {
+          id: snapshot.id,
+          moltbotName: id,
+          volumeId: volume.id,
+          createdAt: snapshot.created_at,
+          sizeGb: Math.ceil(snapshot.size / (1024 * 1024 * 1024)),
+          label: `${id} - ${date}`,
+        };
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return c.json({
       success: true,
@@ -471,6 +477,39 @@ moltbotsRouter.post("/:id/snapshots", async (c) => {
         error: {
           code: "FLY_API_ERROR",
           message: error instanceof Error ? error.message : "Failed to create snapshot",
+        },
+      },
+      500
+    );
+  }
+});
+
+/**
+ * Hide a snapshot (soft delete)
+ * DELETE /api/moltbots/:id/snapshots/:snapshotId
+ *
+ * Since Fly.io doesn't support deleting snapshots, we store hidden IDs
+ * in machine metadata and filter them out when listing.
+ */
+moltbotsRouter.delete("/:id/snapshots/:snapshotId", async (c) => {
+  const id = c.req.param("id");
+  const snapshotId = c.req.param("snapshotId");
+
+  try {
+    const provisioner = getProvisioner();
+    await provisioner.hideSnapshot(id, snapshotId);
+
+    return c.json({
+      success: true,
+      data: { hidden: true, snapshotId },
+    });
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "FLY_API_ERROR",
+          message: error instanceof Error ? error.message : "Failed to hide snapshot",
         },
       },
       500

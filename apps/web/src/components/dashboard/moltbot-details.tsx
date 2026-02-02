@@ -16,6 +16,9 @@ import {
   Loader2,
   Bot,
   Camera,
+  ChevronDown,
+  Wrench,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -69,6 +72,8 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
   const [snapshots, setSnapshots] = useState<VolumeSnapshot[]>([]);
   const [loadingSnapshots, setLoadingSnapshots] = useState(true);
   const [creatingSnapshot, setCreatingSnapshot] = useState(false);
+  const [justUpdated, setJustUpdated] = useState(false);
+  const [troubleshootingOpen, setTroubleshootingOpen] = useState(false);
 
   const checkServerHealth = async (hostname: string) => {
     try {
@@ -148,6 +153,9 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
           if (refreshData.success) {
             setMoltbot(refreshData.data);
           }
+          if (action === "update") {
+            setJustUpdated(true);
+          }
         }
       }
     } catch (err) {
@@ -171,12 +179,41 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
       });
       const data = await res.json();
       if (data.success) {
-        setSnapshots((prev) => [data.data, ...prev]);
+        const previousCount = snapshots.length;
+        // Poll until we get a new snapshot with valid data (2 min max)
+        for (let i = 0; i < 60; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          const listRes = await fetch(`${API_URL}/api/moltbots/${moltbotId}/snapshots`);
+          const listData = await listRes.json();
+          if (listData.success && listData.data.length > previousCount) {
+            const newest = listData.data[0];
+            // Check if data looks valid (year > 2000 and size > 0)
+            const year = new Date(newest.createdAt).getFullYear();
+            if (year > 2000 && newest.sizeGb > 0) {
+              setSnapshots(listData.data);
+              break;
+            }
+          }
+          // After max retries, just use whatever we have
+          if (i === 59) {
+            setSnapshots(listData.data);
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to create snapshot:", err);
     } finally {
       setCreatingSnapshot(false);
+    }
+  };
+
+  const handleDeleteSnapshot = async (snapshotId: string) => {
+    const res = await fetch(`${API_URL}/api/moltbots/${moltbotId}/snapshots/${snapshotId}`, {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (data.success) {
+      setSnapshots((prev) => prev.filter((s) => s.id !== snapshotId));
     }
   };
 
@@ -288,6 +325,24 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
         </CardContent>
       </Card>
 
+      {/* SSH Access - Terminal Style */}
+      <div className="bg-zinc-950 rounded-lg px-4 py-3">
+        <div className="flex items-center gap-4">
+          <Terminal className="h-5 w-5 text-zinc-400 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-zinc-200">SSH Access</p>
+            <p className="text-xs text-zinc-500 truncate">For advanced configuration via command line</p>
+          </div>
+          <div className="flex items-center gap-2 bg-zinc-900 rounded-lg px-3 py-2 font-mono text-sm">
+            <code className="text-green-400 hidden sm:block">{sshCommand}</code>
+            <code className="text-green-400 sm:hidden">fly ssh console...</code>
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-zinc-800" onClick={() => copyToClipboard(sshCommand)}>
+              {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-zinc-400" />}
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {/* Secondary sections in grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Server Controls */}
@@ -326,6 +381,17 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
               <Download className={`mr-2 h-4 w-4 ${actionLoading === "update" ? "animate-bounce" : ""}`} />
               {actionLoading === "update" ? "Updating..." : "Update OpenClaw"}
             </Button>
+            {justUpdated && (
+              <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                <div className="flex gap-2 text-sm">
+                  <Info className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                  <div className="text-muted-foreground">
+                    <p className="font-medium text-foreground">Update complete!</p>
+                    <p className="mt-1">If you experience issues, try running <code className="bg-muted px-1 rounded">openclaw doctor</code> via SSH.</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -383,27 +449,57 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <SnapshotList snapshots={snapshots} loading={loadingSnapshots} />
+          <SnapshotList snapshots={snapshots} loading={loadingSnapshots} creating={creatingSnapshot} onDelete={handleDeleteSnapshot} />
         </CardContent>
       </Card>
 
-      {/* SSH Access - Terminal Style */}
-      <div className="bg-zinc-950 rounded-lg px-4 py-3">
-        <div className="flex items-center gap-4">
-          <Terminal className="h-5 w-5 text-zinc-400 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-zinc-200">SSH Access</p>
-            <p className="text-xs text-zinc-500 truncate">For advanced configuration via command line</p>
+      {/* Troubleshooting */}
+      <Card>
+        <button
+          className="w-full px-6 py-4 flex items-center justify-between text-left"
+          onClick={() => setTroubleshootingOpen(!troubleshootingOpen)}
+        >
+          <div className="flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+            <span className="text-base font-semibold">Troubleshooting</span>
           </div>
-          <div className="flex items-center gap-2 bg-zinc-900 rounded-lg px-3 py-2 font-mono text-sm">
-            <code className="text-green-400 hidden sm:block">{sshCommand}</code>
-            <code className="text-green-400 sm:hidden">fly ssh console...</code>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-zinc-800" onClick={() => copyToClipboard(sshCommand)}>
-              {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-zinc-400" />}
-            </Button>
-          </div>
-        </div>
-      </div>
+          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${troubleshootingOpen ? "rotate-180" : ""}`} />
+        </button>
+        {troubleshootingOpen && (
+          <CardContent className="pt-0 space-y-4">
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">After updating OpenClaw</h4>
+              <p className="text-sm text-muted-foreground">
+                If your moltbot isn&apos;t working correctly after an update, SSH in and run the doctor command:
+              </p>
+              <div className="bg-zinc-950 rounded-lg px-3 py-2 font-mono text-sm space-y-1">
+                <div><code className="text-green-400">openclaw doctor</code></div>
+                <div className="text-zinc-500 text-xs"># Interactive - walks you through each fix</div>
+                <div className="mt-2"><code className="text-green-400">openclaw doctor --non-interactive --yes</code></div>
+                <div className="text-zinc-500 text-xs"># Auto-fix - applies safe fixes automatically</div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">View logs</h4>
+              <p className="text-sm text-muted-foreground">
+                Check the moltbot logs from your terminal (not SSH):
+              </p>
+              <div className="bg-zinc-950 rounded-lg px-3 py-2 font-mono text-sm">
+                <code className="text-green-400">fly logs -a moltbot-{moltbot.name}</code>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">Hard restart</h4>
+              <p className="text-sm text-muted-foreground">
+                If the Restart button doesn&apos;t help, try a machine-level restart:
+              </p>
+              <div className="bg-zinc-950 rounded-lg px-3 py-2 font-mono text-sm">
+                <code className="text-green-400">fly machine restart -a moltbot-{moltbot.name}</code>
+              </div>
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
       {/* Danger Zone */}
       <Card className="border-destructive/30">
