@@ -11,6 +11,10 @@
  */
 
 import crypto from "node:crypto";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 import type {
   ProvisionerConfig,
   MoltbotConfig,
@@ -409,6 +413,11 @@ export class FlyProvisioner {
       await this.setMachineMetadata(appName, machine.id, GATEWAY_TOKEN_METADATA_KEY, gatewayToken);
       this.logger.info(`Gateway token stored in metadata`, { ...context, machineId: machine.id });
 
+      // Wait for machine to be started, then install sudo access
+      // SSH requires the machine to be running
+      await this.waitForState(appName, machine.id, "started", 120000);
+      await this.installSudoAccess(appName);
+
       const instance = this.mapMachineToInstance(machine, appName);
       instance.gatewayToken = gatewayToken;
       return instance;
@@ -503,7 +512,9 @@ export class FlyProvisioner {
     const machineId = machines[0].id;
     await this.machinesRequest<void>(appName, "POST", `/machines/${machineId}/start`);
 
+    // Wait for start, then reinstall sudo (container resets to base image)
     const moltbot = await this.waitForState(appName, machineId, "started");
+    await this.installSudoAccess(appName);
     this.logger.info(`Moltbot started: ${moltbotName}`, context);
     return moltbot;
   }
@@ -587,8 +598,9 @@ export class FlyProvisioner {
       }
     );
 
-    // Wait for the machine to be running again
+    // Wait for the machine to be running again, then install sudo
     const moltbot = await this.waitForState(appName, machineId, "started");
+    await this.installSudoAccess(appName);
     this.logger.info(`Moltbot updated: ${moltbotName}`, context);
     return moltbot;
   }
@@ -612,7 +624,9 @@ export class FlyProvisioner {
     const machineId = machines[0].id;
     await this.machinesRequest<void>(appName, "POST", `/machines/${machineId}/restart`);
 
+    // Wait for restart, then reinstall sudo (container resets to base image)
     const moltbot = await this.waitForState(appName, machineId, "started");
+    await this.installSudoAccess(appName);
     this.logger.info(`Moltbot restarted: ${moltbotName}`, context);
     return moltbot;
   }
@@ -948,6 +962,10 @@ export class FlyProvisioner {
       await this.setMachineMetadata(appName, machine.id, GATEWAY_TOKEN_METADATA_KEY, gatewayToken);
       this.logger.info(`Gateway token stored in metadata`, { ...context, machineId: machine.id });
 
+      // Wait for machine to be started, then install sudo access
+      await this.waitForState(appName, machine.id, "started", 120000);
+      await this.installSudoAccess(appName);
+
       const instance = this.mapMachineToInstance(machine, appName);
       instance.gatewayToken = gatewayToken;
       return instance;
@@ -1020,5 +1038,47 @@ export class FlyProvisioner {
       destroyed: "destroyed",
     };
     return stateMap[flyState] || "stopped";
+  }
+
+  /**
+   * Installs sudo and configures passwordless access for the node user.
+   * This must be done via SSH because the startup command runs as 'node' user
+   * (docker-entrypoint.sh switches from root to node for security).
+   * SSH sessions connect as root, bypassing the entrypoint.
+   */
+  async installSudoAccess(appName: string): Promise<void> {
+    const context = { appName, operation: "install-sudo" };
+    this.logger.info(`Installing sudo access for node user`, context);
+
+    // Retry logic for SSH connection - moltbots can take 2-3 minutes to fully start
+    const maxRetries = 10;
+    const retryDelayMs = 15000; // 15 seconds between retries
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        this.logger.info(`Installing sudo (attempt ${attempt}/${maxRetries})`, context);
+        // Run commands via fly ssh console (connects as root)
+        await execAsync(`fly ssh console -a ${appName} -C 'apt-get update -qq'`, { timeout: 120000 });
+        await execAsync(`fly ssh console -a ${appName} -C 'apt-get install -y -qq sudo'`, { timeout: 120000 });
+        await execAsync(
+          `fly ssh console -a ${appName} -C "sh -c 'echo \\"node ALL=(ALL) NOPASSWD: ALL\\" > /etc/sudoers.d/node && chmod 440 /etc/sudoers.d/node'"`,
+          { timeout: 60000 }
+        );
+        this.logger.info(`Sudo access installed successfully`, context);
+        return;
+      } catch (error) {
+        if (attempt < maxRetries) {
+          this.logger.info(`SSH attempt ${attempt} failed, retrying in ${retryDelayMs / 1000}s...`, context);
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        } else {
+          // Log but don't fail - sudo is nice to have but not critical
+          this.logger.error(
+            `Failed to install sudo access after ${maxRetries} attempts (non-fatal)`,
+            error instanceof Error ? error : new Error(String(error)),
+            context
+          );
+        }
+      }
+    }
   }
 }

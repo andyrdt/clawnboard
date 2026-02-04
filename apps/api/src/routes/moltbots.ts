@@ -356,6 +356,39 @@ moltbotsRouter.post("/:id/update", async (c) => {
 });
 
 /**
+ * Install sudo access for a moltbot
+ * POST /api/moltbots/:id/install-sudo
+ *
+ * Installs sudo and configures passwordless access for the node user.
+ * This is needed because the OpenClaw container runs as 'node' user,
+ * but agents may need to install packages (e.g., browser dependencies).
+ */
+moltbotsRouter.post("/:id/install-sudo", async (c) => {
+  const id = c.req.param("id");
+
+  try {
+    const provisioner = getProvisioner();
+    await provisioner.installSudoAccess(`moltbot-${id}`);
+
+    return c.json({
+      success: true,
+      data: { message: "Sudo access installed successfully" },
+    });
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "FLY_API_ERROR",
+          message: error instanceof Error ? error.message : "Failed to install sudo access",
+        },
+      },
+      500
+    );
+  }
+});
+
+/**
  * List snapshots for a moltbot
  * GET /api/moltbots/:id/snapshots
  */

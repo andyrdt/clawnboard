@@ -135,7 +135,7 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
     fetchSnapshots();
   }, [moltbotId]);
 
-  const handleAction = async (action: "start" | "stop" | "restart" | "destroy" | "update") => {
+  const handleAction = async (action: "start" | "stop" | "restart" | "destroy" | "update" | "install-sudo") => {
     setActionLoading(action);
     try {
       const endpoint = action === "destroy"
@@ -377,10 +377,16 @@ export function MoltbotDetails({ moltbotId }: MoltbotDetailsProps) {
                 {status.label}
               </Button>
             )}
-            <Button variant="outline" size="sm" className="w-full" onClick={() => handleAction("update")} disabled={actionLoading !== null || !isRunning}>
-              <Download className={`mr-2 h-4 w-4 ${actionLoading === "update" ? "animate-bounce" : ""}`} />
-              {actionLoading === "update" ? "Updating..." : "Update OpenClaw"}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="flex-1" onClick={() => handleAction("update")} disabled={actionLoading !== null || !isRunning}>
+                <Download className={`mr-2 h-4 w-4 ${actionLoading === "update" ? "animate-bounce" : ""}`} />
+                {actionLoading === "update" ? "Updating..." : "Update"}
+              </Button>
+              <Button variant="outline" size="sm" className="flex-1" onClick={() => handleAction("install-sudo")} disabled={actionLoading !== null || !isRunning}>
+                <Terminal className={`mr-2 h-4 w-4`} />
+                {actionLoading === "install-sudo" ? "Installing..." : "Install Sudo"}
+              </Button>
+            </div>
             {justUpdated && (
               <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                 <div className="flex gap-2 text-sm">
